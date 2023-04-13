@@ -27,8 +27,10 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 import yaml
 from utilities_helper import *
 
-def read_yaml_config(file_path):
-    with open(file_path, 'r') as file:
+
+
+def read_yaml_config(CONFIG):
+    with open(CONFIG, 'r') as file:
         try:
             config = yaml.safe_load(file)
             return config
@@ -37,8 +39,9 @@ def read_yaml_config(file_path):
             return None
 if __name__ == '__main__':
 
-    config_path = r'FinalProject\FinalProject\config.yaml'
-    config_data = read_yaml_config(config_path)
+    ROOT = os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    CONFIG = os.path.join(os.getcwd(),"config.yaml")
+    config_data = read_yaml_config(CONFIG)
 
     # Read The data
     X_train,y_train = load_from_tsfile(f"{config_data['experiment_params']['root_path']}\Datasets\{config_data['experiment_params']['dataset_name']}\{config_data['experiment_params']['dataset_name']}_TRAIN.ts")
@@ -48,7 +51,7 @@ if __name__ == '__main__':
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=1-config_data['preprocessing']['split_ratio'],shuffle=True)
 
     #Take X ratio out of the training data to be used to train the generator
-    X_train, X_train_gen, y_train, y_train_gen = train_test_split(X_train, y_train, test_size=config_data['datageneration']['percentage_of_original_data'],shuffle=True)
+    _, X_train_gen, _, y_train_gen = train_test_split(X_train, y_train, test_size=config_data['datageneration']['percentage_of_original_data'],shuffle=True)
 
     #relevant preprocessing
     X_train = preprocess_dgan(X_train,config_data['datageneration']['max_sequence_len'])
@@ -189,13 +192,15 @@ if __name__ == '__main__':
                 "learning_rate": lr, 
                 "criterion":config_data['pretraining']['criterion'],
                 "optimizer": config_data['pretraining']['optimizer']}
+    
 
+    
     Experiment_param['model type'] = config_data['pretraining']['model_type']
     Experiment_param['experiment state'] = 'pretraining'
     #Pretrain the model on synthetic data
-    train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_each_epoch,run_param,Experiment_param)
-    directory =f'''{config_data['experiment_params']['root_path']}\dataset\{config_data['experiment_params']['dataset_name']}'''
-    last_modified_file = get_last_modified_file(directory)
+    model_path = train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_each_epoch,run_param,Experiment_param)
+    parent_directory =f'''{os.getcwd()}\dataset\{config_data['experiment_params']['dataset_name']}'''
+    last_modified_file = get_latest_model_path(parent_directory)
 
     if last_modified_file:
         print(f"The last modified file in the directory is: {last_modified_file}")
@@ -209,6 +214,9 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load(last_modified_file))
     model.to(device)
 
+    _,__, y_train = map_label_int(y_train)
+    _,__,y_val = map_label_int(y_val)
+    _,__,y_test = map_label_int(y_test)
 
     print('Creating dataloaders for the original data...')
     train_dataloader = DataLoader(TimeSeriesDataset(X_train,y_train),batch_size=config_data['finetuning']['batch_size'],shuffle=config_data['finetuning']['shuffle'])
@@ -244,6 +252,12 @@ if __name__ == '__main__':
                 "optimizer": config_data['finetuning']['optimizer']}
 
     print("Finetuning the model...")
-    train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_each_epoch)
+    train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_each_epoch,run_param,Experiment_param)
 
-
+    # Generate config directory and save a copy of config into it
+    config_dir = f'''{os.getcwd()}\dataset\{config_data['experiment_params']['dataset_name']}\{Experiment_param['Experiment_id']}\config'''
+    if not os.path.exists(config_dir):
+        os.makedirs(config_dir)
+    with open(f'''{config_dir}\config.yaml''', 'w') as outfile:
+        yaml.dump(config_data, outfile, default_flow_style=False)
+        
