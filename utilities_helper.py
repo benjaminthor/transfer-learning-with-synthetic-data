@@ -542,52 +542,78 @@ def map_label_int(y):
 	return label_to_int, int_to_label, y_int
 
 def train_loop(data_loader, model, device, loss_fn, optimizer, print_every_n=200):
-	model.train()
-	size = len(data_loader.dataset)
-	num_batches = len(data_loader)
-	train_loss=0
-	tp=0
-	for batch,(X,y) in enumerate(data_loader):
-		X = X.to(device)
-		y = y.type(torch.LongTensor)
-		y = y.to(device)
-		pred = model(X.float())
-		# print(f'Preds : {pred.argmax(1)}')
-		# print(f'GT : {y}')
-		loss = loss_fn(pred,y)
-		train_loss += loss
-		tp += (y==pred.argmax(1)).type(torch.float).sum().item()
-		optimizer.zero_grad()
-		loss.backward()
-		optimizer.step()
-		loss, current = loss.item(), batch*len(X)
-		if batch%print_every_n==0:
-			print(f'loss={loss:.3f}, {current} / {size}')
+    model.train()
+    size = len(data_loader.dataset)
+    num_batches = len(data_loader)
+    train_loss=0;acc=0;train_f1_score=0; train_precision=0; train_recall=0; train_specificity_score=0; train_fpr_score=0
+    mcc, cohen_kappa= 0,0
+    for batch,(X,y) in enumerate(data_loader):
+        X = X.to(device)
+        y = y.type(torch.LongTensor)
+        y = y.to(device)
+        pred = model(X.float())
+        loss = loss_fn(pred,y)
+        train_loss += loss
+        pred= pred.argmax(1)
+        acc += (y==pred).type(torch.float).sum().item()
+        y = y.cpu().detach().numpy()
+        pred = pred.cpu().detach().numpy()
+        train_f1_score+= f1_score(y,pred,average='micro')
+        train_precision+= precision_score(y,pred,average='micro')
+        train_recall+= recall_score(y,pred,average='micro')
+        mcc += matthews_corrcoef(y, pred)
+        cohen_kappa += cohen_kappa_score(y, pred)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        loss, current = loss.item(), batch*len(X)
+        if batch%print_every_n==0:
+            print(f'loss={loss:.3f}, {current} / {size}')
 
-	train_loss /= num_batches
-	train_acc = tp/size    
-	print(f'train accuracy = {train_acc}, val_loss = {train_loss:2f}')
-	return train_loss,train_acc
+    train_loss /= num_batches
+    train_acc = acc/size
+    train_f1_score /= num_batches
+    train_precision /= num_batches
+    train_recall /= num_batches
+    mcc /= num_batches
+    cohen_kappa /= num_batches
+
+    print(f'train accuracy = {train_acc}, val_loss = {train_loss:2f}')
+    return train_loss, train_acc, train_f1_score, train_precision, train_recall, mcc, cohen_kappa
 
 def validation_loop(data_loader,model,device,loss_fn):
-	model.eval()
-	size=len(data_loader.dataset)
-	num_batches = len(data_loader)
-	val_loss=0
-	tp=0
-	with torch.no_grad():
-		for X,y in data_loader:
-			X = X.to(device)
-			y = y.type(torch.LongTensor)
-			y = y.to(device)
-			pred = model(X.float())
-			val_loss += loss_fn(pred,y).item()
-			tp += (y==pred.argmax(1)).type(torch.float).sum().item()
-		
-	val_loss /= num_batches
-	val_acc = tp/size
-	print(f'validation accuracy = {val_acc}, val_loss = {val_loss:2f}')
-	return val_loss,val_acc
+      model.eval()
+      size=len(data_loader.dataset)
+      num_batches = len(data_loader)
+      val_loss=0; acc=0; val_f1_score=0; val_precision=0; val_recall=0
+      mcc_val, cohen_kappa_val = 0,0
+      with torch.no_grad():
+            for X,y in data_loader:
+                  X = X.to(device)
+                  y = y.type(torch.LongTensor)
+                  y = y.to(device)
+                  pred = model(X.float())
+                  val_loss += loss_fn(pred,y).item()
+                  pred= pred.argmax(1)
+                  acc += (y==pred).type(torch.float).sum().item()
+                  y = y.cpu().detach().numpy()
+                  pred = pred.cpu().detach().numpy()
+                  val_f1_score+= f1_score(y,pred,average='micro')
+                  val_precision+= precision_score(y,pred,average='micro')
+                  val_recall+= recall_score(y,pred,average='micro')
+                  mcc_val += matthews_corrcoef(y, pred)
+                  cohen_kappa_val += cohen_kappa_score(y, pred)
+
+      val_loss /=num_batches
+      val_acc = acc/size
+      val_f1_score /= num_batches
+      val_precision /= num_batches
+      val_recall /= num_batches
+      mcc_val /= num_batches
+      cohen_kappa_val /= num_batches
+
+      print(f'validation accuracy = {val_acc}, val_loss = {val_loss:2f}')
+      return val_loss,val_acc, val_f1_score, val_precision, val_recall, mcc_val, cohen_kappa_val
 
 def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_model, run_param,Experiment_param):
 	run = neptune.init_run(
@@ -601,16 +627,38 @@ def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,
 	best_loss = np.inf
 	# define the number of epochs and early stopping patience
 	for epoch in range(run_param['epochs']):
-		# Train
-		train_loss, train_acc = train_loop(train_dataloader, model, device, criterion, optimizer)
+		#Train
+		train_loss, train_acc, train_f1_score, train_precision, train_recall, auc_roc_train , auc_pr_train, conf_matrix_train, mcc_train, cohen_kappa_train, balanced_accuracy_train , specificity_score_train, fpr_score_train = train_loop(train_dataloader, model, device, criterion, optimizer)
 		run["train/accuracy"].log(train_acc)
 		run["train/loss"].log(train_loss)
+		run["train/f1_score"].log(train_f1_score)
+		run["train/precision_score"].log(train_precision)
+		run["train/recall_score"].log(train_recall)
+		run["train/auc_roc"].log(auc_roc_train)
+		run["train/auc_pr"].log(auc_pr_train)
+		run["train/conf_matrix"].log(conf_matrix_train)
+		run["train/matthews_corrcoef"].log(mcc_train)
+		run["train/cohen_kappa"].log(cohen_kappa_train)
+		run["train/balanced_accuracy"].log(balanced_accuracy_train)
+		run["train/specificity_score"].log(specificity_score_train)
+		run["train/fpr_score"].log(fpr_score_train)
 		#Evaluate
-		val_loss, val_acc = validation_loop(validation_dataloader, model, device, criterion)
+		val_loss,val_acc, val_f1_score, val_precision, val_recall, auc_roc_val , auc_pr_val, conf_matrix_val, mcc_val, cohen_kappa_val, balanced_accuracy_val, specificity_score_val, fpr_score_val = validation_loop(validation_dataloader, model, device, criterion)
 		run["validation/accuracy"].log(val_acc)
 		run["validation/loss"].log(val_loss)
-		
-		
+		run["validation/f1_score"].log(val_f1_score)
+		run["validation/precision_score"].log(val_precision)
+		run["validation/recall_score"].log(val_recall)
+		run["validation/auc_roc"].log(auc_roc_val)
+		run["validation/auc_pr"].log(auc_pr_val)
+		run["validation/conf_matrix"].log(conf_matrix_val)
+		run["validation/matthews_corrcoef"].log(mcc_val)
+		run["validation/cohen_kappa"].log(cohen_kappa_val)
+		run["validation/balanced_accuracy"].log(balanced_accuracy_val)
+		run["validation/specificity_score"].log(specificity_score_val)
+		run["validation/fpr_score"].log(fpr_score_val)
+
+
 		if val_loss < best_loss:
 			if save_model:
 				# save the model
