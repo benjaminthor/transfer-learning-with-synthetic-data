@@ -394,6 +394,55 @@ def preprocess_dgan(df:pd.DataFrame,sequence_length:int):
 	data = data.reshape((df.shape[0], sequence_length, df.shape[1]))
 	return data
 
+def create_dgan_param(config_data):
+	DGAN_param = {'epochs': config_data['datageneration']['epochs'],
+				'attribute_noise_dim': config_data['datageneration']['attribute_noise_dim'],
+				'feature_noise_dim': config_data['datageneration']['feature_noise_dim'], 
+				'attribute_num_layers': config_data['datageneration']['attribute_num_layers'], 
+				'attribute_num_units': config_data['datageneration']['attribute_num_units'], 
+				'feature_num_layers':  config_data['datageneration']['feature_num_layers'], 
+				'feature_num_units':config_data['datageneration']['feature_num_units'], 
+				'use_attribute_discriminator': config_data['datageneration']['use_attribute_discriminator'], 
+				'normalization': config_data['datageneration']['normalization'], 
+				'apply_feature_scaling': config_data['datageneration']['apply_feature_scaling'], 
+				'apply_example_scaling': config_data['datageneration']['apply_example_scaling'], 
+				'binary_encoder_cutoff': config_data['datageneration']['binary_encoder_cutoff'], 
+				'forget_bias': config_data['datageneration']['forget_bias'], 
+				'gradient_penalty_coef':config_data['datageneration']['gradient_penalty_coef'], 
+				'attribute_gradient_penalty_coef':config_data['datageneration']['attribute_gradient_penalty_coef'], 
+				'attribute_loss_coef': config_data['datageneration']['attribute_loss_coef'], 
+				'generator_learning_rate':  config_data['datageneration']['generator_learning_rate'], 
+				'generator_beta1':  config_data['datageneration']['generator_beta1'], 
+				'discriminator_learning_rate': config_data['datageneration']['discriminator_learning_rate'], 
+				'discriminator_beta1': config_data['datageneration']['discriminator_beta1'], 
+				'attribute_discriminator_learning_rate':  config_data['datageneration']['attribute_discriminator_learning_rate'], 
+				'attribute_discriminator_beta1': config_data['datageneration']['attribute_discriminator_beta1'], 
+				'batch_size':  config_data['datageneration']['batch_size'], 
+				'discriminator_rounds': config_data['datageneration']['discriminator_rounds'], 
+				'generator_rounds': config_data['datageneration']['generator_rounds'],
+				'mixed_precision_training': config_data['datageneration']['mixed_precision_training']
+				}
+	return DGAN_param
+
+def define_criterion(config_data):
+	if config_data['pretraining']['criterion'].lower() == "crossentropy":
+		criterion = nn.CrossEntropyLoss()
+
+	elif config_data['pretraining']['criterion'].lower() == "bce":
+		criterion = nn.BCELoss()
+	
+	return criterion
+
+def create_experiment_param(config_data):
+	Experiment_param ={'experiment state':'data generation',
+					'Experiment_id': f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{uuid.uuid4().hex}', # experiment unique ID 
+					'Dataset name':config_data['experiment_params']['dataset_name'], # Dataset name most be as generated dataset dir name. it will be used while saving the generated data  
+					'usage of original data': config_data['datageneration']['percentage_of_original_data'],   # how mach of the original data set is used to for generating synthetic
+					'generate_n_sample':config_data['datageneration']['generate_n_sample'], # control the number of samples to generate per class
+					'model type':config_data['datageneration']['generate_n_sample']
+					}
+	return Experiment_param
+
 # Split the data into train and test sets
 def split_dataset_by_label(X, y):
 	splits = {}
@@ -493,52 +542,52 @@ def map_label_int(y):
 	return label_to_int, int_to_label, y_int
 
 def train_loop(data_loader, model, device, loss_fn, optimizer, print_every_n=200):
-    model.train()
-    size = len(data_loader.dataset)
-    num_batches = len(data_loader)
-    train_loss=0
-    tp=0
-    for batch,(X,y) in enumerate(data_loader):
-        X = X.to(device)
-        y = y.type(torch.LongTensor)
-        y = y.to(device)
-        pred = model(X.float())
-        # print(f'Preds : {pred.argmax(1)}')
-        # print(f'GT : {y}')
-        loss = loss_fn(pred,y)
-        train_loss += loss
-        tp += (y==pred.argmax(1)).type(torch.float).sum().item()
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        loss, current = loss.item(), batch*len(X)
-        if batch%print_every_n==0:
-            print(f'loss={loss:.3f}, {current} / {size}')
+	model.train()
+	size = len(data_loader.dataset)
+	num_batches = len(data_loader)
+	train_loss=0
+	tp=0
+	for batch,(X,y) in enumerate(data_loader):
+		X = X.to(device)
+		y = y.type(torch.LongTensor)
+		y = y.to(device)
+		pred = model(X.float())
+		# print(f'Preds : {pred.argmax(1)}')
+		# print(f'GT : {y}')
+		loss = loss_fn(pred,y)
+		train_loss += loss
+		tp += (y==pred.argmax(1)).type(torch.float).sum().item()
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+		loss, current = loss.item(), batch*len(X)
+		if batch%print_every_n==0:
+			print(f'loss={loss:.3f}, {current} / {size}')
 
-    train_loss /= num_batches
-    train_acc = tp/size    
-    print(f'train accuracy = {train_acc}, val_loss = {train_loss:2f}')
-    return train_loss,train_acc
+	train_loss /= num_batches
+	train_acc = tp/size    
+	print(f'train accuracy = {train_acc}, val_loss = {train_loss:2f}')
+	return train_loss,train_acc
 
 def validation_loop(data_loader,model,device,loss_fn):
-    model.eval()
-    size=len(data_loader.dataset)
-    num_batches = len(data_loader)
-    val_loss=0
-    tp=0
-    with torch.no_grad():
-        for X,y in data_loader:
-            X = X.to(device)
-            y = y.type(torch.LongTensor)
-            y = y.to(device)
-            pred = model(X.float())
-            val_loss += loss_fn(pred,y).item()
-            tp += (y==pred.argmax(1)).type(torch.float).sum().item()
+	model.eval()
+	size=len(data_loader.dataset)
+	num_batches = len(data_loader)
+	val_loss=0
+	tp=0
+	with torch.no_grad():
+		for X,y in data_loader:
+			X = X.to(device)
+			y = y.type(torch.LongTensor)
+			y = y.to(device)
+			pred = model(X.float())
+			val_loss += loss_fn(pred,y).item()
+			tp += (y==pred.argmax(1)).type(torch.float).sum().item()
 		
-    val_loss /= num_batches
-    val_acc = tp/size
-    print(f'validation accuracy = {val_acc}, val_loss = {val_loss:2f}')
-    return val_loss,val_acc
+	val_loss /= num_batches
+	val_acc = tp/size
+	print(f'validation accuracy = {val_acc}, val_loss = {val_loss:2f}')
+	return val_loss,val_acc
 
 def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_model, run_param,Experiment_param):
 	run = neptune.init_run(
@@ -579,6 +628,58 @@ def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,
 	run.stop()
 	return model_path
 
+def create_model_based_on_config(model_str,config_data):
+	if model_str == "GRU":   
+		model = GRU_Classifier(input_size=config_data['experiment_params']['num_features'],
+								hidden_size=config_data['pretraining']['hidden_size'],
+								num_layers=config_data['pretraining']['num_layers_stacked'], 
+								num_classes=config_data['experiment_params']['num_classes'])
+	elif model_str == "LSTM":
+		model = LSTM_Classifier(input_dim=config_data['experiment_params']['num_features'],
+								hidden_dim=config_data['pretraining']['hidden_size'],
+								num_layers=config_data['pretraining']['num_layers_stacked'], 
+								output_dim=config_data['experiment_params']['num_classes'],
+								dropout=config_data['pretraining']['dropout'])
+	elif model_str == "InceptionTime":
+		model = nn.Sequential(
+
+						Reshape((config_data['experiment_params']['num_features'],
+								config_data['experiment_params']['sequence_length'])),
+
+						InceptionBlock(
+							in_channels=config_data['experiment_params']['num_features'], 
+							n_filters=32, 
+							kernel_sizes=[5, 11, 23],
+							bottleneck_channels=32,
+							use_residual=True,
+							activation=nn.ReLU()
+						),
+						InceptionBlock(
+							in_channels=32*4, 
+							n_filters=32, 
+							kernel_sizes=[5, 11, 23],
+							bottleneck_channels=32,
+							use_residual=True,
+							activation=nn.ReLU()
+						),
+						nn.AdaptiveAvgPool1d(output_size=1),
+						Flatten(out_features=32*4*1),
+						nn.Linear(in_features=4*32*1, out_features=config_data['experiment_params']['num_classes'])
+			)
+	elif model_str == "TCN":
+		pass
+	elif model_str == "Transformer":
+		pass
+	elif model_str == "CNN":
+		pass
+	elif model_str == "RNN":
+		pass
+	elif model_str == "NN":
+		pass
+	return model
+
+
+
 def get_latest_model_path(parent_directory):
 	# Get the list of all directories
 	all_dirs = [d for d in os.listdir(parent_directory) if os.path.isdir(os.path.join(parent_directory, d))]
@@ -592,12 +693,29 @@ def get_latest_model_path(parent_directory):
 	# Find all the .pt files in the 'pretraining' subdirectory
 	model_files = glob.glob(os.path.join(pretraining_dir, '*.pt'))
 
+	# Get the creation time of the first file
+	last_file = model_files[0]
+	last_created_file = last_file
+	last_created_time = os.path.getctime(os.path.join(pretraining_dir, last_created_file))
+
+	for file in model_files:
+		file_path = os.path.join(pretraining_dir, file)
+		file_creation_time = os.path.getctime(file_path)
+
+		if file_creation_time > last_created_time:
+			last_created_file = file
+			last_created_time = file_creation_time
+
 	# Return the first .pt file found (if any)
-	if model_files:
-		return model_files[0]
+	if last_created_file:
+		print(f"The last modified file in the directory is: {last_created_file}")
+		return last_created_file
 	else:
+		print("The directory is empty.")
 		return None
+
+
 	
-	last_modified_file = max(files, key=lambda f: os.path.getmtime(os.path.join(directory, f)))
-	return last_modified_file
+	# last_modified_file = max(files, key=lambda f: os.path.getmtime(os.path.join(directory, f)))
+	# return last_modified_file
 
