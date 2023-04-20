@@ -24,6 +24,7 @@ import datetime
 import uuid
 import pickle
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, matthews_corrcoef, cohen_kappa_score, f1_score, precision_score, recall_score
+from scipy.stats import wasserstein_distance
 
 
 class TimeSeriesDataset(Dataset):    
@@ -618,7 +619,7 @@ def validation_loop(data_loader,model,device,loss_fn):
 def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_model, run_param,Experiment_param):
 	run = neptune.init_run(
 	project="astarteam/FinalProject",
-	api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJhMDI5YzIxMy00NjE1LTQ2MDUtOTk3NS1jNDJhMjIzZDE0NDMifQ==")  # your credentialscredentials
+	api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiIyODExOGY3Ni1iOGRhLTRiYjMtYmJkNC0zYzJjNDA0MjAwMDcifQ==")  # your credentialscredentials
 	directory_path = f'''dataset/{Experiment_param['Dataset name']}/{Experiment_param['Experiment_id']}/{Experiment_param['experiment state']}/'''
 	if not os.path.exists(directory_path):
 		os.makedirs(directory_path)
@@ -761,9 +762,43 @@ def get_latest_model_path(parent_directory):
 	else:
 		print("The directory is empty.")
 		return None
-
-
 	
-	# last_modified_file = max(files, key=lambda f: os.path.getmtime(os.path.join(directory, f)))
-	# return last_modified_file
+
+
+def wasserstein_distance_ts(x, y):
+    """
+    Compute the Wasserstein distance between two time series
+
+    Args:
+        x (torch.Tensor): The first time series, shape (seq_len,).
+        y (torch.Tensor): The second time series, shape (seq_len,).
+
+    Returns:
+        float: The Wasserstein distance between the two time series.
+    """
+    # Compute the cumulative distribution functions (CDFs) of the time series
+    x_cdf = torch.cumsum(x, dim=0)
+    y_cdf = torch.cumsum(y, dim=0)
+    
+    # Compute the Wasserstein distance between the two CDFs
+    wasserstein_dist = wasserstein_distance(x_cdf.cpu().numpy(), y_cdf.cpu().numpy())
+    
+    return wasserstein_dist
+
+def compare_by_wasserstein(times, x, y):
+	# Plot the original data and the generated data
+
+	# __ , ax = plt.subplots()
+	# ax.hist(x[0], bins=50, alpha=0.5, label='Original Data')
+	# ax.hist(y[0], bins=50, alpha=0.5, label='Generated Data')
+	# ax.legend()
+	# plt.savefig('my_plot.png')
+
+	total_dist = 0
+	for i in range(times):
+		total_dist += wasserstein_distance_ts(x[i],y[i])
+	
+	# Calculate average of Wasserstein dist for "times" samples from time series
+	total_dist /= times
+	return total_dist
 
