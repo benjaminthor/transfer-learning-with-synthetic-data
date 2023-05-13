@@ -5,6 +5,7 @@ import matplotlib.dates as md
 # import seaborn as sns
 import random
 import os
+import re
 import sys
 import time
 import datetime
@@ -24,8 +25,8 @@ import datetime
 import uuid
 import pickle
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, matthews_corrcoef, cohen_kappa_score, f1_score, precision_score, recall_score
-from scipy.stats import wasserstein_distance
-
+import yaml
+import chardet
 
 class TimeSeriesDataset(Dataset):    
 	def __init__(self, X, y, transform=None, trarget_transform=None):
@@ -444,6 +445,17 @@ def create_experiment_param(config_data):
 					}
 	return Experiment_param
 
+def create_experiment_param_new(config_data):
+	Experiment_param ={'experiment state':'pretraining_finetuning',
+					'Experiment_id': f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{uuid.uuid4().hex}', # experiment unique ID 
+					'Dataset name':config_data['experiment_params']['dataset_name'], # Dataset name most be as generated dataset dir name. it will be used while saving the generated data  
+					'usage of original data': config_data['datageneration']['percentage_of_original_data'],   # how mach of the original data set is used to for generating synthetic
+					'model type':config_data['pretraining']['model_type'],
+					'index':config_data['experiment_params']['experiment_index']
+
+					}
+	return Experiment_param
+
 # Split the data into train and test sets
 def split_dataset_by_label(X, y):
 	splits = {}
@@ -488,7 +500,7 @@ def train_dgan(data:np.ndarray, DGAN_param:dict, Experiment_param:dict):
 		data,
 		feature_types=[OutputType.CONTINUOUS] * data.shape[2],
 	)
-	run.stop()
+	# run.stop()
 	return model
 
 def save_model(model, Experiment_param:dict, label:str):
@@ -514,18 +526,21 @@ def train_generator_per_label(splitted_data:pd.DataFrame, DGAN_param:dict, Exper
 		models[label] = model
 	return models
 
-def generate_data_per_label(models, Experiment_param):
+def generate_data_per_label(models, Experiment_param,config_data):
 	generated_data = {}
+	synthetic = config_data['datageneration']['percentage_of_original_data']
 	for label in models.keys():
 		print(f"Generating data for label {label}")
 		generated_data[label] = models[label].generate_numpy(Experiment_param['generate_n_sample'])[1]
 	concatenated_data = {'X':np.concatenate([generated_data[label] for label in generated_data.keys()]),
 				'y':np.concatenate([np.array([label]*Experiment_param['generate_n_sample']) for label in generated_data.keys()])}
-	directory_path =f'''dataset/{Experiment_param['Dataset name']}/{Experiment_param['Experiment_id']}/data/'''
+	# directory_path =f'''dataset/{Experiment_param['Dataset name']}/{Experiment_param['Experiment_id']}/data/'''
+	directory_path =f'''DGAN_data/{Experiment_param['Dataset name']}/{synthetic}/'''
+
 	# create directory if it doesn't exist
 	if not os.path.exists(directory_path):
 		os.makedirs(directory_path)
-	file_path = os.path.join(directory_path, f'exp_data.npy')
+	file_path = os.path.join(directory_path, f'generated_data.npy')
 	np.save(file_path, concatenated_data)
 	return generated_data,concatenated_data
 
@@ -542,6 +557,43 @@ def map_label_int(y):
 	y_int = np.array([label_to_int[label] for label in y])
 	return label_to_int, int_to_label, y_int
 
+# def train_loop(data_loader, model, device, loss_fn, optimizer, print_every_n=200):
+# 	model.train()
+# 	size = len(data_loader.dataset)
+# 	num_batches = len(data_loader)
+# 	train_loss=0
+# 	tp=0
+# 	for batch,(X,y) in enumerate(data_loader):
+# 		X = X.to(device)
+# 		y = y.type(torch.LongTensor)
+# 		y = y.to(device)
+# 		pred = model(X.float())
+# 		# print(f'Preds : {pred.argmax(1)}')
+# 		# print(f'GT : {y}')
+# 		loss = loss_fn(pred,y)
+# 		train_loss += loss
+# 		# print("Shape of y:", y.shape)
+# 		# print("Shape of pred:", pred.shape)
+# 		# print("Device of y:", y.device)
+# 		# print("Device of pred:", pred.device)
+# 		# print(f"Pred type",type(pred))
+# 		# print("y Type:",type(y))
+# 		# print("Max value in y:", y.max().item())
+# 		# print("Min value in y:", y.min().item())
+
+
+# 		tp += (y==pred.argmax(1)).type(torch.float).sum().item()
+# 		optimizer.zero_grad()
+# 		loss.backward()
+# 		optimizer.step()
+# 		loss, current = loss.item(), batch*len(X)
+# 		if batch%print_every_n==0:
+# 			print(f'loss={loss:.3f}, {current} / {size}')
+
+# 	train_loss /= num_batches
+# 	train_acc = tp/size    
+# 	print(f'train accuracy = {train_acc}, val_loss = {train_loss:2f}')
+# 	return train_loss,train_acc
 def train_loop(data_loader, model, device, loss_fn, optimizer, print_every_n=200):
     model.train()
     size = len(data_loader.dataset)
@@ -582,6 +634,25 @@ def train_loop(data_loader, model, device, loss_fn, optimizer, print_every_n=200
     print(f'train accuracy = {train_acc}, val_loss = {train_loss:2f}')
     return train_loss, train_acc, train_f1_score, train_precision, train_recall, mcc, cohen_kappa
 
+# def validation_loop(data_loader,model,device,loss_fn):
+# 	model.eval()
+# 	size=len(data_loader.dataset)
+# 	num_batches = len(data_loader)
+# 	val_loss=0
+# 	tp=0
+# 	with torch.no_grad():
+# 		for X,y in data_loader:
+# 			X = X.to(device)
+# 			y = y.type(torch.LongTensor)
+# 			y = y.to(device)
+# 			pred = model(X.float())
+# 			val_loss += loss_fn(pred,y).item()
+# 			tp += (y==pred.argmax(1)).type(torch.float).sum().item()
+		
+# 	val_loss /= num_batches
+# 	val_acc = tp/size
+# 	print(f'validation accuracy = {val_acc}, val_loss = {val_loss:2f}')
+# 	return val_loss,val_acc
 def validation_loop(data_loader,model,device,loss_fn):
       model.eval()
       size=len(data_loader.dataset)
@@ -616,10 +687,81 @@ def validation_loop(data_loader,model,device,loss_fn):
       print(f'validation accuracy = {val_acc}, val_loss = {val_loss:2f}')
       return val_loss,val_acc, val_f1_score, val_precision, val_recall, mcc_val, cohen_kappa_val
 
+def pretrain_and_finetune(synthetic_dataloader,train_dataloader,validation_dataloader,model,device,criterion,optimizer,run_param,experiment_param):
+	print(f'''Pretraining : {run_param['epochs']} epochs''')
+	run = neptune.init_run(
+	project="astarteam/FinalProject",
+	api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJhMDI5YzIxMy00NjE1LTQ2MDUtOTk3NS1jNDJhMjIzZDE0NDMifQ==")  # your credentialscredentials
+	directory_path = f'''dataset/{experiment_param['Dataset name']}/{experiment_param['Experiment_id']}/{experiment_param['experiment state']}/'''
+
+	if not os.path.exists(directory_path):
+		os.makedirs(directory_path)
+
+	run["parameters"] = run_param
+	run['Experiment_param'] = experiment_param
+	best_loss = np.inf
+	for epoch in range(run_param['epochs']):
+	# Train
+		train_loss, train_acc, train_f1_score, train_precision, train_recall, mcc_train, cohen_kappa_train = train_loop(data_loader = synthetic_dataloader, model=model, device = device, loss_fn = criterion, optimizer = optimizer)
+		run["pretrain/accuracy"].log(train_acc)
+		run["pretrain/loss"].log(train_loss)
+		run["pretrain/f1_score"].log(train_f1_score)
+		run["pretrain/precision_score"].log(train_precision)
+		run["pretrain/recall_score"].log(train_recall)
+		run["pretrain/matthews_corrcoef"].log(mcc_train)
+		run["pretrain/cohen_kappa"].log(cohen_kappa_train)
+
+	print("Finished Pre-training")
+
+	# Save pretrained model
+	torch.save(model.state_dict(), os.path.join(directory_path, f'pretrained_model.pt'))
+
+	# Load pretrained model
+	model.load_state_dict(torch.load(os.path.join(directory_path, f'pretrained_model.pt')))
+	print("Pretrained model is loaded succesfully")
+
+	# Fine-tune
+	print(f'''Finetuning : {run_param['epochs']} epochs''')
+	for epoch in range(run_param['epochs']):
+	# Train
+		train_loss, train_acc, train_f1_score, train_precision, train_recall, mcc_train, cohen_kappa_train = train_loop(train_dataloader, model, device, criterion, optimizer)
+		run["finetune_training/accuracy"].log(train_acc)
+		run["finetune_training/loss"].log(train_loss)
+		run["finetune_training/f1_score"].log(train_f1_score)
+		run["finetune_training/precision_score"].log(train_precision)
+		run["finetune_training/recall_score"].log(train_recall)
+		run["finetune_training/matthews_corrcoef"].log(mcc_train)
+		run["finetune_training/cohen_kappa"].log(cohen_kappa_train)
+	# Validation
+		val_loss,val_acc, val_f1_score, val_precision, val_recall, mcc_val, cohen_kappa_val = validation_loop(validation_dataloader, model, device, criterion)
+		run["finetune_validation/accuracy"].log(val_acc)
+		run["finetune_validation/loss"].log(val_loss)
+		run["finetune_validation/f1_score"].log(val_f1_score)
+		run["finetune_validation/precision_score"].log(val_precision)
+		run["finetune_validation/recall_score"].log(val_recall)
+		run["finetune_validation/matthews_corrcoef"].log(mcc_val)
+		run["finetune_validation/cohen_kappa"].log(cohen_kappa_val)
+
+		if val_loss < best_loss:
+			# save the model
+			model_path = f'''{directory_path}model_{experiment_param["model type"]}_.pt'''
+			torch.save(model.state_dict(), model_path)
+			best_loss = val_loss
+			early_stopping_counter = 0
+		else:
+			early_stopping_counter += 1
+			# if the early stopping counter has reached the patience, stop training
+			if early_stopping_counter == run_param['patience']:
+				break
+		time.sleep(2)
+	print("Finished Training and validation, now uploading to Neptune.")
+	run.stop()
+	return model_path
+
 def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_model, run_param,Experiment_param):
 	run = neptune.init_run(
 	project="astarteam/FinalProject",
-	api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiIyODExOGY3Ni1iOGRhLTRiYjMtYmJkNC0zYzJjNDA0MjAwMDcifQ==")  # your credentialscredentials
+	api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJhMDI5YzIxMy00NjE1LTQ2MDUtOTk3NS1jNDJhMjIzZDE0NDMifQ==")  # your credentialscredentials
 	directory_path = f'''dataset/{Experiment_param['Dataset name']}/{Experiment_param['Experiment_id']}/{Experiment_param['experiment state']}/'''
 	if not os.path.exists(directory_path):
 		os.makedirs(directory_path)
@@ -629,36 +771,24 @@ def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,
 	# define the number of epochs and early stopping patience
 	for epoch in range(run_param['epochs']):
 		#Train
-		train_loss, train_acc, train_f1_score, train_precision, train_recall, auc_roc_train , auc_pr_train, conf_matrix_train, mcc_train, cohen_kappa_train, balanced_accuracy_train , specificity_score_train, fpr_score_train = train_loop(train_dataloader, model, device, criterion, optimizer)
+		train_loss, train_acc, train_f1_score, train_precision, train_recall, mcc_train, cohen_kappa_train = train_loop(train_dataloader, model, device, criterion, optimizer)
 		run["train/accuracy"].log(train_acc)
 		run["train/loss"].log(train_loss)
 		run["train/f1_score"].log(train_f1_score)
 		run["train/precision_score"].log(train_precision)
 		run["train/recall_score"].log(train_recall)
-		run["train/auc_roc"].log(auc_roc_train)
-		run["train/auc_pr"].log(auc_pr_train)
-		run["train/conf_matrix"].log(conf_matrix_train)
 		run["train/matthews_corrcoef"].log(mcc_train)
 		run["train/cohen_kappa"].log(cohen_kappa_train)
-		run["train/balanced_accuracy"].log(balanced_accuracy_train)
-		run["train/specificity_score"].log(specificity_score_train)
-		run["train/fpr_score"].log(fpr_score_train)
+
 		#Evaluate
-		val_loss,val_acc, val_f1_score, val_precision, val_recall, auc_roc_val , auc_pr_val, conf_matrix_val, mcc_val, cohen_kappa_val, balanced_accuracy_val, specificity_score_val, fpr_score_val = validation_loop(validation_dataloader, model, device, criterion)
+		val_loss,val_acc, val_f1_score, val_precision, val_recall, mcc_val, cohen_kappa_val = validation_loop(validation_dataloader, model, device, criterion)
 		run["validation/accuracy"].log(val_acc)
 		run["validation/loss"].log(val_loss)
 		run["validation/f1_score"].log(val_f1_score)
 		run["validation/precision_score"].log(val_precision)
 		run["validation/recall_score"].log(val_recall)
-		run["validation/auc_roc"].log(auc_roc_val)
-		run["validation/auc_pr"].log(auc_pr_val)
-		run["validation/conf_matrix"].log(conf_matrix_val)
 		run["validation/matthews_corrcoef"].log(mcc_val)
 		run["validation/cohen_kappa"].log(cohen_kappa_val)
-		run["validation/balanced_accuracy"].log(balanced_accuracy_val)
-		run["validation/specificity_score"].log(specificity_score_val)
-		run["validation/fpr_score"].log(fpr_score_val)
-
 
 		if val_loss < best_loss:
 			if save_model:
@@ -675,7 +805,98 @@ def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,
 	time.sleep(2)
 	print("Finished Training and validation, now uploading to Neptune.")
 	run.stop()
-	return model_path
+	# return model_path
+
+# def train_and_log(train_dataloader,validation_dataloader,model,device,criterion,optimizer,save_model, run_param,Experiment_param):
+# 	run = neptune.init_run(
+# 	project="astarteam/FinalProject",
+# 	api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiJhMDI5YzIxMy00NjE1LTQ2MDUtOTk3NS1jNDJhMjIzZDE0NDMifQ==")  # your credentialscredentials
+# 	directory_path = f'''dataset/{Experiment_param['Dataset name']}/{Experiment_param['Experiment_id']}/{Experiment_param['experiment state']}/'''
+# 	if not os.path.exists(directory_path):
+# 		os.makedirs(directory_path)
+# 	run["parameters"] = run_param
+# 	run['Experiment_param'] = Experiment_param
+# 	best_loss = np.inf
+# 	# define the number of epochs and early stopping patience
+# 	for epoch in range(run_param['epochs']):
+# 		# Train
+# 		train_loss, train_acc = train_loop(train_dataloader, model, device, criterion, optimizer)
+# 		run["train/accuracy"].log(train_acc)
+# 		run["train/loss"].log(train_loss)
+# 		#Evaluate
+# 		val_loss, val_acc = validation_loop(validation_dataloader, model, device, criterion)
+# 		run["validation/accuracy"].log(val_acc)
+# 		run["validation/loss"].log(val_loss)
+		
+		
+# 		if val_loss < best_loss:
+# 			if save_model:
+# 				# save the model
+# 				model_path = f'''{directory_path}model_{Experiment_param["model type"]}_.pt'''
+# 				torch.save(model.state_dict(), model_path)
+# 			best_loss = val_loss
+# 			early_stopping_counter = 0
+# 		else:
+# 			early_stopping_counter += 1
+# 		# if the early stopping counter has reached the patience, stop training
+# 		if early_stopping_counter == run_param['patience']:
+# 			break
+# 	time.sleep(2)
+# 	print("Finished Training and validation, now uploading to Neptune.")
+# 	run.stop()
+# 	return model_path
+
+def detect_file_encoding(file_path):
+    with open(file_path, 'rb') as file:
+        result = chardet.detect(file.read())
+    return result['encoding']
+
+def extract_metadata(path):
+    # Replace 'file_path' with the path to your file
+    file_path = path
+
+    encoding = detect_file_encoding(file_path)
+
+    with open(file_path, 'r', encoding=encoding) as file:
+        file_content = file.read()
+
+    # Extract the seriesLength value
+    series_length_match = re.search(r"@seriesLength (\d+)", file_content)
+    if series_length_match:
+        series_length = int(series_length_match.group(1))
+        print("Series Length:", series_length)
+    else:
+        print("Series Length not found")
+
+    # Extract the dimensions value
+    dimensions_match = re.search(r"@dimensions (\d+)", file_content)
+    if dimensions_match:
+        dimensions = int(dimensions_match.group(1))
+        print("Dimensions:", dimensions)
+    else:
+        print("Dimensions not found")
+
+    # Extract the unique labels from the @classLabel line
+    class_label_match = re.search(r"@classLabel true (.+)", file_content)
+    if class_label_match:
+        class_labels_str = class_label_match.group(1)
+        class_labels = [label for label in class_labels_str.split()]
+        print("Unique labels:", class_labels)
+    else:
+        print("Class labels not found")
+
+    return series_length,dimensions,len(class_labels)
+
+
+def read_yaml_config(CONFIG):
+    with open(CONFIG, 'r') as file:
+        try:
+            config = yaml.safe_load(file)
+            return config
+        except yaml.YAMLError as exc:
+            print(exc)
+            return None
+	
 
 def create_model_based_on_config(model_str,config_data):
 	if model_str == "GRU":   
@@ -689,7 +910,7 @@ def create_model_based_on_config(model_str,config_data):
 								num_layers=config_data['pretraining']['num_layers_stacked'], 
 								output_dim=config_data['experiment_params']['num_classes'],
 								dropout=config_data['pretraining']['dropout'])
-	elif model_str == "InceptionTime":
+	elif model_str == "inceptionTime":
 		model = nn.Sequential(
 
 						Reshape((config_data['experiment_params']['num_features'],
@@ -762,43 +983,9 @@ def get_latest_model_path(parent_directory):
 	else:
 		print("The directory is empty.")
 		return None
+
+
 	
-
-
-def wasserstein_distance_ts(x, y):
-    """
-    Compute the Wasserstein distance between two time series
-
-    Args:
-        x (torch.Tensor): The first time series, shape (seq_len,).
-        y (torch.Tensor): The second time series, shape (seq_len,).
-
-    Returns:
-        float: The Wasserstein distance between the two time series.
-    """
-    # Compute the cumulative distribution functions (CDFs) of the time series
-    x_cdf = torch.cumsum(x, dim=0)
-    y_cdf = torch.cumsum(y, dim=0)
-    
-    # Compute the Wasserstein distance between the two CDFs
-    wasserstein_dist = wasserstein_distance(x_cdf.cpu().numpy(), y_cdf.cpu().numpy())
-    
-    return wasserstein_dist
-
-def compare_by_wasserstein(times, x, y):
-	# Plot the original data and the generated data
-
-	# __ , ax = plt.subplots()
-	# ax.hist(x[0], bins=50, alpha=0.5, label='Original Data')
-	# ax.hist(y[0], bins=50, alpha=0.5, label='Generated Data')
-	# ax.legend()
-	# plt.savefig('my_plot.png')
-
-	total_dist = 0
-	for i in range(times):
-		total_dist += wasserstein_distance_ts(x[i],y[i])
-	
-	# Calculate average of Wasserstein dist for "times" samples from time series
-	total_dist /= times
-	return total_dist
+	# last_modified_file = max(files, key=lambda f: os.path.getmtime(os.path.join(directory, f)))
+	# return last_modified_file
 

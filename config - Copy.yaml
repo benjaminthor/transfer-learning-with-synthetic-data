@@ -1,0 +1,68 @@
+
+datageneration:
+  apply_example_scaling: true # Default
+  apply_feature_scaling: true # Default
+  attribute_discriminator_beta1: 0.5 # Default
+  attribute_discriminator_learning_rate: 0.001 # Default
+  attribute_gradient_penalty_coef: 10.0 # Default
+  attribute_loss_coef: 1.0 # Default
+  attribute_noise_dim: 10 # Default
+  attribute_num_layers: 3 # Default
+  attribute_num_units: 100 # Default
+  batch_size: 1024 # Default
+  binary_encoder_cutoff: 150 # Default
+  discriminator_beta1: 0.5 # Default
+  discriminator_learning_rate: 0.001 # Default
+  discriminator_rounds: 1 # Default
+  epochs: 1500 # Default
+  feature_noise_dim: 10 # Default
+  feature_num_layers: 1 # Default
+  feature_num_units: 100 # Default
+  forget_bias: false # Default
+  generate_n_sample: 10 # [2,4] Will be multiplied by the number of samples per class 
+  generator_beta1: 0.5 # Default
+  generator_learning_rate: 0.001 # Default
+  generator_rounds: 1 # Default
+  gradient_penalty_coef: 10.0 # Default
+  max_sequence_len: 100 # Not Defaults will need to adapt per mission
+  mixed_precision_training: false # Default
+  normalization: false # Default
+  percentage_of_original_data: 0.9 # Not Defaults [0.7,0.9]
+  sample_length: 100 # Not Defaults will need to adapt per mission
+  use_attribute_discriminator: true # Default
+
+experiment_params:
+  dataset_name: BasicMotions # Will need to read from Table
+  root_path: C:\Users\nati\Desktop\Implementations\FinalProject
+  num_classes: 4 # Will need to read from data metedata
+  num_features: 6 # Will need to read from data metedata
+  sequence_length: 100 # Will need to read from data metedata
+
+finetuning:
+  batch_size: 10 # Read from table [10% or 20%]
+  epochs: 10 # Read from Table [10,20]
+  learning_rate: 0.001 # Read from Table [0.001,0.0001]
+  model_type: LSTM # Read from Table [LSTM,InceptionTime]
+  optimizer: Adam # Defaults
+  shuffle: True # Default
+  patience: 5 # Default
+  criterion: Crossentropy # Default
+
+
+preprocessing:
+  split_ratio: 0.8 # Default (Not Necessary)
+
+pretraining:
+  multiple_experiments: True # Not Necessary
+  models_list: [LSTM,GRU] # Not Necessary
+  patience: 5 # Default
+  hidden_size: 128 # Same as Benchmark and Finetuning ( Not Necessary )
+  num_layers_stacked: 3 # Same as Benchmark and Finetuning ( Not Necessary )
+  batch_size: 10 # Read from table [10,20]
+  dropout: 0.1 # Default
+  criterion: Crossentropy # Default
+  epochs: 10 # Read from table [10,20]
+  learning_rate: 0.001 # Read from table [0.001,0.0001]
+  model_type: LSTM # Same as Benchmark ( Read from Table )
+  optimizer: Adam # Default
+  save_each_epoch: True # 

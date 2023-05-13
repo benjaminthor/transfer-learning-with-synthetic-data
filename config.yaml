@@ -13,28 +13,29 @@ datageneration:
   discriminator_beta1: 0.5
   discriminator_learning_rate: 0.001
   discriminator_rounds: 1
-  epochs: 1500
+  epochs: 20
   feature_noise_dim: 10
   feature_num_layers: 1
   feature_num_units: 100
   forget_bias: false
-  generate_n_sample: 550
+  generate_n_sample: 2997
   generator_beta1: 0.5
   generator_learning_rate: 0.001
   generator_rounds: 1
   gradient_penalty_coef: 10.0
-  max_sequence_len: 144
+  max_sequence_len: 8
   mixed_precision_training: false
   normalization: false
-  percentage_of_original_data: 0.7
-  sample_length: 144
+  percentage_of_original_data: 0.9
+  sample_length: 8
   use_attribute_discriminator: true
 experiment_params:
-  dataset_name: ArticularyWordRecognition
-  num_classes: 25
-  num_features: 9
+  dataset_name: PenDigits
+  experiment_index: 1
+  num_classes: 10
+  num_features: 2
   root_path: C:\Users\nati\Desktop\Implementations\FinalProject
-  sequence_length: 144
+  sequence_length: 8
 finetuning:
   batch_size: 27
   criterion: Crossentropy
