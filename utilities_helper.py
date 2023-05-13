@@ -710,6 +710,10 @@ def pretrain_and_finetune(synthetic_dataloader,train_dataloader,validation_datal
 		run["pretrain/recall_score"].log(train_recall)
 		run["pretrain/matthews_corrcoef"].log(mcc_train)
 		run["pretrain/cohen_kappa"].log(cohen_kappa_train)
+		if train_acc >= 0.99:
+			print(f"Accuracy has reached 0.99, stopping pretraining at epoch :{epoch}.")
+			break
+
 
 	print("Finished Pre-training")
 
