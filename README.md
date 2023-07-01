@@ -10,8 +10,8 @@
 6. Results and Analysis
 7. Code Availability
 8. Conclusion
-9. Introduction
-
+   
+## Introduction
 This repository contains the code and resources for my graduation project, which aims to optimize deep learning performance in the context of limited multivariate time series data. The project explores the challenge of scarce data in real-world applications of deep learning and investigates whether a transfer learning approach can improve the efficiency and robustness of predictive models.
 
 ## Motivation
